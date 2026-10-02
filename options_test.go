@@ -111,14 +111,29 @@ func TestOptionsIgnoreAnyFunction(t *testing.T) {
 	}
 }
 
-func TestOptionsRetry(t *testing.T) {
+func TestMaxRetriesAndMaxSleep(t *testing.T) {
 	opts := buildOpts()
-	opts.maxRetries = 50 // initial attempt + 50 retries = 11
-	opts.maxSleep = time.Millisecond
+	assert.Equal(t, _defaultRetries, opts.maxRetries)
+	assert.Equal(t, 100*time.Millisecond, opts.maxSleep)
+
+	opts = buildOpts(MaxRetries(50), MaxSleep(time.Millisecond))
+	assert.Equal(t, 50, opts.maxRetries)
+	assert.Equal(t, time.Millisecond, opts.maxSleep)
+}
+
+func TestOptionsRetry(t *testing.T) {
+	opts := buildOpts(MaxRetries(50), MaxSleep(time.Millisecond))
 
 	for i := 0; i < 50; i++ {
-		assert.True(t, opts.retry(i), "Attempt %v/51 should allow retrying", i)
+		assert.True(t, opts.retry(i), "Attempt %v/50 should allow retrying", i)
 	}
-	assert.False(t, opts.retry(51), "Attempt 51/51 should not allow retrying")
-	assert.False(t, opts.retry(52), "Attempt 52/51 should not allow retrying")
+	assert.False(t, opts.retry(50), "Attempt 50/50 should not allow retrying")
+	assert.False(t, opts.retry(51), "Attempt 51/50 should not allow retrying")
+	assert.False(t, opts.retry(52), "Attempt 52/50 should not allow retrying")
+}
+
+func TestOptionsRetryLargeAttempt(t *testing.T) {
+	opts := buildOpts(MaxRetries(100), MaxSleep(time.Millisecond))
+	assert.True(t, opts.retry(65), "Attempt 65 should not overflow")
+	assert.False(t, opts.retry(100), "Attempt 100 should not allow retrying")
 }

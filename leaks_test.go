@@ -36,7 +36,7 @@ var _ = TestingT(testing.TB(nil))
 // testOptions passes a shorter max sleep time, used so tests don't wait
 // ~1 second in cases where we expect Find to error out.
 func testOptions() Option {
-	return maxSleep(time.Millisecond)
+	return MaxSleep(time.Millisecond)
 }
 
 func TestFind(t *testing.T) {
@@ -74,6 +74,41 @@ func TestFindRetry(t *testing.T) {
 	require.NoError(t, Find(), "Find should retry while background goroutine ends")
 }
 
+func TestFindMaxRetries(t *testing.T) {
+	t.Run("zero retries does not retry and fails immediately", func(t *testing.T) {
+		bg := startBlockedG()
+		defer bg.unblock()
+
+		start := time.Now()
+		err := Find(MaxRetries(0))
+		require.Error(t, err, "Should find leaks without retrying")
+		assert.Less(t, time.Since(start), 50*time.Millisecond, "Should return immediately with 0 retries")
+	})
+
+	t.Run("custom retries allows delayed goroutine exit", func(t *testing.T) {
+		bg := startBlockedG()
+		go func() {
+			time.Sleep(5 * time.Millisecond)
+			bg.unblock()
+		}()
+
+		err := Find(MaxRetries(20), MaxSleep(5*time.Millisecond))
+		require.NoError(t, err, "Find should retry and succeed when goroutine finishes")
+	})
+}
+
+func TestFindMaxSleep(t *testing.T) {
+	t.Run("shorter max sleep fails faster", func(t *testing.T) {
+		bg := startBlockedG()
+		defer bg.unblock()
+
+		start := time.Now()
+		err := Find(MaxRetries(5), MaxSleep(time.Millisecond))
+		require.Error(t, err)
+		assert.Less(t, time.Since(start), 100*time.Millisecond, "Find should return quickly with short max sleep")
+	})
+}
+
 type fakeT struct {
 	errors []string
 }
@@ -102,6 +137,15 @@ func TestVerifyNone(t *testing.T) {
 			cleanupCalled = true
 		}))
 		require.True(t, cleanupCalled, "expect cleanup registered callback to be called")
+	})
+
+	t.Run("VerifyNone with MaxRetries and MaxSleep", func(t *testing.T) {
+		ft := &fakeT{}
+		bg := startBlockedG()
+		defer bg.unblock()
+
+		VerifyNone(ft, MaxRetries(1), MaxSleep(time.Millisecond))
+		require.NotEmpty(t, ft.errors, "Expect errors from VerifyNone with custom MaxRetries and MaxSleep")
 	})
 }
 

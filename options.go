@@ -126,10 +126,27 @@ func RunOnFailure() Option {
 	})
 }
 
-func maxSleep(d time.Duration) Option {
+// MaxRetries sets the maximum retry attempts when looking for extra goroutines.
+// When looking for leaking goroutines, goleak will retry until all goroutines
+// terminate or until the maximum retry attempts are exhausted.
+// If not configured, defaults to 20.
+func MaxRetries(n int) Option {
+	return optionFunc(func(opts *opts) {
+		opts.maxRetries = n
+	})
+}
+
+// MaxSleep sets the maximum sleep duration in-between each retry attempt.
+// The sleep duration grows in an exponential backoff, up to the maximum specified here.
+// If not configured, defaults to 100 milliseconds.
+func MaxSleep(d time.Duration) Option {
 	return optionFunc(func(opts *opts) {
 		opts.maxSleep = d
 	})
+}
+
+func maxSleep(d time.Duration) Option {
+	return MaxSleep(d)
 }
 
 func addFilter(f func(stack.Stack) bool) Option {
@@ -170,9 +187,12 @@ func (o *opts) retry(i int) bool {
 		return false
 	}
 
-	d := time.Duration(int(time.Microsecond) << uint(i))
-	if d > o.maxSleep {
-		d = o.maxSleep
+	d := o.maxSleep
+	if i < 40 {
+		d = time.Duration(int(time.Microsecond) << uint(i))
+		if d > o.maxSleep {
+			d = o.maxSleep
+		}
 	}
 	time.Sleep(d)
 	return true
